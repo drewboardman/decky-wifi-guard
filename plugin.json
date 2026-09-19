@@ -1,0 +1,13 @@
+{
+  "name": "Wi-Fi Download Guard",
+  "author": "Drew",
+  "flags": [],
+  "api_version": 1,
+  "publish": {
+    "tags": [
+      "wifi",
+      "downloads"
+    ],
+    "description": "Automatically pause Steam downloads on your chosen Wi-Fi network."
+  }
+}
