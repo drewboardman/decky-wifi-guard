@@ -1,5 +1,5 @@
 {
-  "name": "decky-wifi-toggle",
+  "name": "decky-wifi-guard",
   "version": "0.1.0",
   "description": "Pause Steam downloads on a chosen Wi-Fi network",
   "type": "module",
@@ -7,7 +7,7 @@
     "build": "rollup -c",
     "watch": "rollup -c -w",
     "typecheck": "tsc --noEmit",
-    "test": "python3 -m unittest discover -s tests && node --experimental-strip-types --test tests/controller.test.ts",
+    "test": "python3 -m unittest discover -s tests && tsx --test tests/*.test.ts",
     "package": "pnpm build && python3 scripts/package.py"
   },
   "keywords": [
@@ -25,7 +25,9 @@
     "@types/react-dom": "19.1.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-test-renderer": "18.3.1",
     "rollup": "^4.53.3",
+    "tsx": "4.20.5",
     "typescript": "^5.6.2"
   },
   "dependencies": {
@@ -58,5 +60,9 @@
   "packageManager": "pnpm@9.15.9",
   "engines": {
     "node": ">=22.6.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/drewboardman/decky-wifi-guard.git"
   }
 }

@@ -1,42 +1,50 @@
-# Wi-Fi Download Guard
+# Wi-Fi Guard
 
-A Decky plugin that pauses Steam downloads while connected to one chosen Wi-Fi network. The compact Quick Access panel follows the local Decky OptiScaler plugin's native controls, status pills, and notices.
+A Decky plugin that automatically pauses Steam downloads on one chosen Wi-Fi network. Its compact Quick Access panel uses native Decky controls, status pills, and notices adapted from the local OptiScaler plugin.
+
+## Install
+
+Download the ZIP from [Releases](https://github.com/drewboardman/decky-wifi-guard/releases). Copy it to the Deck and extract its **Wi-Fi Guard** directory into `~/homebrew/plugins/`, then restart Decky Loader or reboot. Alternatively, enable Decky's developer mode and use **Install Plugin from URL** with the release asset's download URL.
+
+If you previously sideloaded the unpublished **Wi-Fi Download Guard** prototype, remove it before installing **Wi-Fi Guard** so two plugins do not compete for the same download queue. Configure the network again in the renamed plugin.
 
 ## Use
 
-1. Open **Wi-Fi Download Guard** in Decky.
-2. Choose **Use current network**, or enter the exact network name (SSID) and save it.
+1. Open **Wi-Fi Guard** in Decky.
+2. Choose **Use current network**, or enter an exact Wi-Fi name (SSID) and save.
 3. Leave **Pause on this network** enabled.
 
-Steam game updates, game installs, and Workshop downloads pause on that network. Downloads resume after leaving only if the guard paused them. A pause already in effect before protection starts is preserved. To download on the protected network, turn the guard off; otherwise manually resuming Steam downloads causes the guard to pause them again.
+Steam game installs, game updates, and Workshop downloads pause on that network. Downloads resume after leaving only if the guard paused them. A pause already in effect before protection starts is preserved. Turn the guard off to download on the protected network; manually resuming while protection is active causes the guard to pause again.
 
-The Wi-Fi radio stays on. Games, browser traffic, Steam Cloud, and other apps remain usable. This does not block OS updates, other applications, or Steam's own client updater.
+Wi-Fi stays on, so games, browser traffic, Steam Cloud, and other applications remain usable. Other apps, OS updates, and Steam's client updater are not blocked.
 
-## Event-driven operation
+## Events, not polling
 
-There are **no polling timers, pings, connectivity probes, or forced Wi-Fi scans**.
+`SteamClient.System.Network.RegisterForDeviceChanges` drives network updates. On startup or a network event, the backend takes a local, read-only SSID snapshot using NetworkManager's `nmcli ... device wifi list --rescan no`. The network name is matched exactly, including Unicode, capitalization, spaces, colons, and backslashes.
 
-- `SteamClient.System.Network.RegisterForDeviceChanges` triggers a local SSID snapshot on startup and whenever Steam reports device changes.
-- The backend reads NetworkManager's existing access-point state with `nmcli --terse --escape yes --colors no --fields IN-USE,SSID device wifi list --rescan no`. It uses the active SSID, not the editable connection-profile name. Names containing colons, backslashes, Unicode, or spaces are handled exactly.
-- `SteamClient.Downloads.RegisterForDownloadOverview` reports pause-state changes. Unchanged download progress and remote PCs' download events are ignored. These events reuse the cached network state rather than launching more network queries.
-- `EnableAllDownloads(false, "0")` pauses this Steam client's download queue; `true` restores it.
-- Settings changes and **Retry status** request a fresh snapshot. Concurrent events are serialized and coalesced; a newer network event invalidates an in-flight snapshot before it can resume downloads.
+`SteamClient.Downloads.RegisterForDownloadOverview` drives pause-state updates. Unchanged progress events and remote PCs' download events are ignored. `EnableAllDownloads` targets only the local Steam client (`"0"`). Subscriptions stay alive when the panel is closed.
 
-Subscriptions belong to the plugin, so closing the Quick Access panel does not stop protection. On an unsupported Steam client, the plugin displays an error instead of falling back to polling.
+There are no pings, connectivity probes, forced Wi-Fi scans, or recurring polling timers. One-shot timers coalesce event bursts and bound operations; a healthy idle plugin schedules no work. Unsupported Steam APIs produce a visible error rather than a polling fallback.
 
-The native network callback carries a binary protobuf; this first version uses it as a change notification and lets NetworkManager supply the exact SSID. This avoids coupling the plugin to Steam's private protobuf classes.
+## Failure handling
 
-## Recovery and scope
+Unexpected errors stop automatic processing and show **Retry protection**. The plugin does not automatically restart or retry failed operations. Fault handling covers native callbacks, rejected promises, malformed data, partial initialization, listener failures, UI rendering, cleanup failures, event floods, and feedback loops.
 
-Settings and pause ownership are saved atomically in Decky's plugin settings directory. Ownership is saved before pausing so reloads can recover. Network lookup errors keep the current download state; disabling the guard still releases a pause it owns. An unreadable settings journal is reported and not overwritten.
+A hung operation has a deadline and remains tracked until it settles, so retrying cannot pile up calls. Retry obtains fresh Steam pause state. An unreadable settings file leaves the backend inactive rather than entering a startup crash loop. Logs are emitted once per supervisor fault; failed view listeners are removed.
 
-Normal plugin unload attempts to restore owned pauses. A forced Steam/Decky exit can interrupt cleanup; reloading the plugin reconciles the saved journal, or you can resume downloads in Steam manually. Steam exposes one global pause flag, so it cannot distinguish an additional manual pause made while the guard already holds that pause.
+Settings and pause ownership are persisted atomically in Decky's plugin settings directory. Ownership is saved before pausing. Failed network detection preserves the existing download state. Normal unload attempts to restore an owned pause; if cleanup fails or an operation is uncertain, the saved journal supports recovery on the next load. Steam's Downloads page remains available for manual recovery.
 
-Protection requires Steam Gaming Mode with Decky running. It is reactive, not a firewall: a small amount of download traffic may pass during startup or a network transition before the event is processed. Desktop Mode and periods when Decky is unavailable are not covered. If multiple Wi-Fi adapters are connected, a match on any adapter activates protection.
+These protections contain plugin-level failures, but the frontend shares Steam's process and cannot guarantee against native Steam or OS crashes. Architecture, limits, and recovery details are in [docs/architecture.md](docs/architecture.md).
 
-## Build and test
+## Scope
 
-Requires Node.js 22.6+ (for the TypeScript test runner), Python 3.9+, and pnpm 9.15.9. No Python packages are required.
+Protection requires Gaming Mode with Decky running. It is reactive, not a firewall; some download traffic may pass during startup or a network transition before the event is processed. Desktop Mode is not covered. A matching connection on any Wi-Fi adapter activates protection.
+
+Steam exposes one global pause flag: an additional manual pause made while the guard already holds that pause cannot be distinguished. Network lookup failures preserve the current state; they cannot establish protection on a new, unknown network.
+
+## Development
+
+Requires Node.js 22.6+, Python 3.9+, and pnpm 9.15.9. No Python packages are required.
 
 ```sh
 pnpm install --frozen-lockfile
@@ -46,25 +54,12 @@ pnpm build
 python3 scripts/package.py
 ```
 
-The installable archive is `out/decky-wifi-toggle-0.1.0.zip`. If your system pnpm/Corepack is unavailable, use `npx --yes pnpm@9.15.9` in place of `pnpm`.
+The installable archive is `out/decky-wifi-guard-0.1.0.zip`. If system pnpm/Corepack is unavailable, substitute `npx --yes pnpm@9.15.9` for `pnpm`. CI runs the same checks and packages an artifact.
 
-## Install on Steam Deck
+Tests cover pure policy, native event boundaries, simulated storms/timeouts/failures, actual React error containment, persistence, and subprocess cleanup. Live SteamOS acceptance is still required: switching networks, pre-existing manual pause, manual resume while protected, sleep/wake, panel closed, plugin reload, fault retry, and removal.
 
-Copy the ZIP to the Deck, extract its **Wi-Fi Download Guard** directory into `~/homebrew/plugins/`, then restart Decky Loader (or reboot). If hosting the ZIP at a reachable URL, Decky's developer **Install Plugin from URL** option can install it directly.
+## References and attribution
 
-## On-device verification
+Network/download calls were checked against [Steam's UI source mirrored by SteamTracking](https://github.com/SteamDatabase/SteamTracking/blob/master/ClientExtracted/steamui/chunk~2dcc5aaf7.js). They are internal Steam interfaces, which can change with Steam updates. NetworkManager's flags are described in its [nmcli manual](https://networkmanager.dev/docs/api/latest/nmcli.html).
 
-Local tests cover the policy and backend; real SteamOS integration still needs this check:
-
-- Start a download on ordinary Wi-Fi, then connect to the configured network: the queue should pause with the panel closed.
-- Switch away: it should resume. Repeat with Steam already manually paused: it should stay paused.
-- Try Resume while protected: the guard should pause again. Turn the guard off: an owned pause should release.
-- Check sleep/wake, Wi-Fi off/on, plugin reload, and plugin removal.
-- Confirm the panel follows network changes and that controller navigation and the on-screen keyboard work.
-
-## API references and attribution
-
-The network callback, local client ID `"0"`, and download calls were checked against [Steam's UI source mirrored by SteamTracking](https://github.com/SteamDatabase/SteamTracking/blob/master/ClientExtracted/steamui/chunk~2dcc5aaf7.js). These are internal Steam interfaces and should be checked again if a Steam update changes them. NetworkManager's read-only flags are documented in the [nmcli manual](https://networkmanager.dev/docs/api/latest/nmcli.html).
-
-`src/Common.tsx` and the initial build configuration were adapted from the existing local `decky-optiscaler` project. Its BSD 3-Clause license and notices are retained in `LICENSE`. No OptiScaler payloads or game-modification code are included.
-# decky-wifi-guard
+`src/Common.tsx` and the initial build configuration were adapted from the local `decky-optiscaler` project. Its BSD 3-Clause license and notices are retained in `LICENSE`. No OptiScaler payloads or game-modification code are included.

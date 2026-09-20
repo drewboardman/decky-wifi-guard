@@ -35,13 +35,21 @@ export function Notice({
         lineHeight: 1.45,
       }}
     >
-      {title ? <div style={{ fontWeight: 600, marginBottom: "2px" }}>{title}</div> : null}
+      {title ? (
+        <div style={{ fontWeight: 600, marginBottom: "2px" }}>{title}</div>
+      ) : null}
       <div style={{ opacity: 0.9 }}>{children}</div>
     </Focusable>
   );
 }
 
-export function KeyValue({ label, value }: { label: ReactNode; value: ReactNode }) {
+export function KeyValue({
+  label,
+  value,
+}: {
+  label: ReactNode;
+  value: ReactNode;
+}) {
   return (
     <div
       style={{
@@ -53,12 +61,20 @@ export function KeyValue({ label, value }: { label: ReactNode; value: ReactNode 
       }}
     >
       <span style={{ opacity: 0.65 }}>{label}</span>
-      <span style={{ textAlign: "right", wordBreak: "break-word" }}>{value}</span>
+      <span style={{ textAlign: "right", wordBreak: "break-word" }}>
+        {value}
+      </span>
     </div>
   );
 }
 
-export function Pill({ children, color }: { children: ReactNode; color?: string }) {
+export function Pill({
+  children,
+  color,
+}: {
+  children: ReactNode;
+  color?: string;
+}) {
   return (
     <span
       style={{
@@ -79,7 +95,13 @@ export function Pill({ children, color }: { children: ReactNode; color?: string 
 
 export function Mono({ children }: { children: ReactNode }) {
   return (
-    <code style={{ fontFamily: "monospace", fontSize: "12px", wordBreak: "break-all" }}>
+    <code
+      style={{
+        fontFamily: "monospace",
+        fontSize: "12px",
+        wordBreak: "break-all",
+      }}
+    >
       {children}
     </code>
   );
