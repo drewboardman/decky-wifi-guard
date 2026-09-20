@@ -4,7 +4,10 @@ A Decky Loader plugin that pauses Steam downloads on a Wi-Fi network you choose,
 
 ## Install
 
-Download `decky-wifi-guard-0.1.0.zip` from [Releases](https://github.com/drewboardman/decky-wifi-guard/releases) and extract the **Wi-Fi Guard** folder into `~/homebrew/plugins/` on your Deck, then restart Decky Loader or reboot. Alternatively, enable Decky's developer mode and use **Install Plugin from URL** with the zip's download URL.
+Two ways to install this:
+
+1. In Game Mode, open Decky's settings, turn on Developer mode, and use Install Plugin from URL with the zip's download link;
+2. or unpack the zip into `~/homebrew/plugins/` and restart Decky Loader.
 
 ## Use
 
