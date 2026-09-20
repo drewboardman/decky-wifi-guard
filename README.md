@@ -2,6 +2,8 @@
 
 A Decky Loader plugin that pauses Steam downloads on a Wi-Fi network you choose, then resumes them when you leave. It reacts to Steam's own network and download events, so there is no polling, no pings, and no repeated Wi-Fi scans.
 
+<img src="Screenshot%202026-09-19%20at%206.38.35%E2%80%AFPM.png" alt="Wi-Fi Guard in Game Mode with downloads paused on the protected Wi-Fi network" width="420" />
+
 ## Install
 
 * Download the [latest release](https://github.com/drewboardman/decky-wifi-guard/releases)
