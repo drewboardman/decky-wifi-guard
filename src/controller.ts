@@ -1,13 +1,15 @@
+import { GuardFault, issue, issueFor } from "./errors";
+import type { UiIssue } from "./errors";
 import { decide, isSettings, isSnapshot, protects } from "./domain";
 import type { Settings, Snapshot } from "./domain";
 import type { Dispose, Ports } from "./ports";
-import { describe, Effects } from "./safety";
+import { Effects } from "./safety";
 
 export interface ViewState {
   backend: Snapshot | null;
   paused: boolean | null;
   blocked: boolean;
-  error: string | null;
+  issue: UiIssue | null;
   mode: "starting" | "active" | "faulted" | "stopped";
 }
 
@@ -18,7 +20,7 @@ export class DownloadGuard {
     backend: null,
     paused: null,
     blocked: false,
-    error: null,
+    issue: null,
     mode: "starting",
   };
   private listeners = new Set<() => void>();
@@ -98,7 +100,7 @@ export class DownloadGuard {
     this.state = {
       ...this.state,
       mode: "faulted",
-      error: `${describe(error)} Automatic protection is stopped; retry explicitly.`,
+      issue: issueFor(error),
     };
     this.report("Protection stopped", error);
     this.publish();
@@ -127,7 +129,7 @@ export class DownloadGuard {
           if (generation !== this.generation) return;
           this.boundary(() => {
             if (typeof paused !== "boolean")
-              throw new Error("Invalid pause event");
+              throw new GuardFault("invalid_response", "Invalid pause event");
             if (paused === this.state.paused) return;
             this.state = { ...this.state, paused };
             if (this.command !== null && paused === !this.command) {
@@ -165,7 +167,8 @@ export class DownloadGuard {
       this.eventWindow = now;
       this.eventCount = 0;
     }
-    if (++this.eventCount > 100) throw new Error("Excessive event rate");
+    if (++this.eventCount > 100)
+      throw new GuardFault("event_overload", "Excessive event rate");
     this.pending = true;
     this.needsRead ||= read;
     // One-shot coalescing; idle plugins have no scheduled work or polling.
@@ -200,7 +203,7 @@ export class DownloadGuard {
   }
   async configure(settings: Settings): Promise<void> {
     if (!isSettings(settings)) {
-      this.trip("Use an SSID of at most 32 bytes without control characters");
+      this.trip(new GuardFault("invalid_settings"));
       return;
     }
     if (this.stopped) return;
@@ -216,9 +219,7 @@ export class DownloadGuard {
     if (this.effects.busy || this.running || this.cleanupFailed) {
       this.state = {
         ...this.state,
-        error: this.cleanupFailed
-          ? "An event subscription could not be removed. Reload Decky before retrying."
-          : "An earlier operation is still running. Wait for it to finish before retrying.",
+        issue: issue(this.cleanupFailed ? "cleanup_failed" : "busy"),
       };
       this.publish();
       return;
@@ -230,13 +231,12 @@ export class DownloadGuard {
       this.state = {
         ...this.state,
         mode: "faulted",
-        error:
-          "An event subscription could not be removed. Reload Decky before retrying.",
+        issue: issue("cleanup_failed"),
       };
       this.publish();
       return;
     }
-    this.state = { ...this.state, mode: "starting", paused: null, error: null };
+    this.state = { ...this.state, mode: "starting", paused: null, issue: null };
     this.eventCount = 0;
     this.command = null;
     this.started = false;
@@ -249,13 +249,14 @@ export class DownloadGuard {
     operation: () => T | Promise<T>,
   ): Promise<T> {
     const result = await this.effects.run(label, operation);
-    if (!result.ok) throw new Error(result.error);
+    if (!result.ok) throw result.error;
     return result.value;
   }
   private async drain() {
     let steps = 0;
     while (this.pending && !this.halted()) {
-      if (++steps > 16) throw new Error("Event feedback loop detected");
+      if (++steps > 16)
+        throw new GuardFault("event_overload", "Event feedback loop detected");
       this.pending = false;
       if (this.settings) {
         const settings = this.settings;
@@ -270,14 +271,15 @@ export class DownloadGuard {
         const snapshot = await this.effect("Read network state", () =>
           this.ports.repository.read(),
         );
-        if (!isSnapshot(snapshot)) throw new Error("Malformed backend state");
+        if (!isSnapshot(snapshot))
+          throw new GuardFault("invalid_response", "Malformed backend state");
         if (this.halted()) return;
         this.owned = snapshot.owned_pause;
         this.state = {
           ...this.state,
           backend: snapshot,
           blocked: protects(snapshot),
-          error: null,
+          issue: null,
         };
         if (this.needsRead) continue;
       }
@@ -289,10 +291,10 @@ export class DownloadGuard {
       );
       switch (decision.kind) {
         case "wait":
-          this.state = { ...this.state, error: decision.reason };
+          this.state = { ...this.state, issue: issue(decision.reason) };
           break;
         case "hold":
-          this.state = { ...this.state, error: null };
+          this.state = { ...this.state, issue: null };
           break;
         case "acquire":
           await this.effect("Save pause ownership", () =>
@@ -316,7 +318,7 @@ export class DownloadGuard {
                 3000,
                 () => {
                   this.cancelAcknowledgement = null;
-                  this.trip("Steam did not confirm the download command");
+                  this.trip(new GuardFault("command_unconfirmed"));
                 },
               );
             }

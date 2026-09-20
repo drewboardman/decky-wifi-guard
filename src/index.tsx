@@ -1,3 +1,5 @@
+import { issueFor } from "./errors";
+import { IssueMessage } from "./IssueMessage";
 import { definePlugin } from "@decky/api";
 import { staticClasses } from "@decky/ui";
 import { FaWifi } from "react-icons/fa";
@@ -47,8 +49,8 @@ export default definePlugin(() => {
       name: "Wi-Fi Guard",
       icon: <span>!</span>,
       content: (
-        <div role="alert">
-          Wi-Fi Guard could not start. Reload Decky to retry.
+        <div style={{ padding: 16 }}>
+          <IssueMessage issue={issueFor(error)} stopped />
         </div>
       ),
     };

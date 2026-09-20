@@ -44,9 +44,9 @@ test("missing native capabilities fail locally, not via an unguarded property ac
         () => {},
         () => {},
       ),
-    /unavailable/,
+    /steam_unavailable/,
   );
-  await assert.rejects(adapter.setDownloadsEnabled(false), /unavailable/);
+  await assert.rejects(adapter.setDownloadsEnabled(false), /steam_unavailable/);
 });
 test("download command always targets local client and awaits rejection", async () => {
   const calls: unknown[] = [];

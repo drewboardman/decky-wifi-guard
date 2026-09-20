@@ -8,7 +8,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch, AsyncMock, Mock
 
-sys.modules['decky'] = types.SimpleNamespace(logger=logging.getLogger('test'))
+logger = logging.getLogger('test')
+logger.addHandler(logging.NullHandler())
+logger.propagate = False
+sys.modules['decky'] = types.SimpleNamespace(logger=logger)
 spec = importlib.util.spec_from_file_location('plugin', Path(__file__).resolve().parents[1] / 'main.py')
 plugin = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(plugin)
@@ -55,6 +58,7 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(Path, 'replace', side_effect=OSError('disk full')):
             response = await self.plugin.set_owned_pause(True)
         self.assertFalse(response['ok']); self.assertIn('disk full', response['error'])
+        self.assertEqual(response['error_code'], 'storage_unavailable')
         self.assertFalse(self.service.data['owned_pause'])
     async def test_corrupt_journal_leaves_startup_inert_and_is_not_overwritten(self):
         self.path.write_text('bad json')
@@ -68,7 +72,7 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse((await self.plugin.get_state())['ok'])
     async def test_logger_failure_cannot_crash_failed_startup(self):
         with patch.object(Path, 'mkdir', side_effect=PermissionError('denied')):
-            with patch.object(plugin.decky.logger, 'exception', side_effect=RuntimeError('logger')):
+            with patch.object(plugin.decky.logger, 'error', side_effect=RuntimeError('logger')):
                 await self.plugin._main()
         self.assertFalse((await self.plugin.get_state())['ok'])
     async def test_rpc_before_initialization_returns_failure(self):
@@ -80,7 +84,7 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
     async def test_network_error_explicit(self):
         with patch.object(self.service.network, 'read', side_effect=FileNotFoundError):
             response = await self.plugin.get_state()
-        self.assertTrue(response['ok']); self.assertIn('nmcli', response['value']['network_error'])
+        self.assertTrue(response['ok']); self.assertEqual('network_unavailable', response['value']['network_error_code'])
     async def test_serialized_writes_preserve_both_changes(self):
         await asyncio.gather(self.plugin.set_owned_pause(True), self.plugin.save_settings(False, 'Home'))
         self.assertEqual(self.service.data, {'owned_pause': True, 'enabled': False, 'ssid': 'Home'})
@@ -89,6 +93,27 @@ class BackendTests(unittest.IsolatedAsyncioTestCase):
         with self.assertLogs('test', level='ERROR'): await self.plugin._main()
         self.assertFalse((await self.plugin.get_state())['ok'])
         self.assertEqual(self.path.stat().st_size, 4097)
+
+    async def test_network_timeout_and_unknown_failure_have_distinct_codes(self):
+        for error, code in [(asyncio.TimeoutError(), 'network_timeout'), (RuntimeError('unexpected details'), 'unknown')]:
+            with patch.object(self.service.network, 'read', side_effect=error):
+                response = await self.plugin.get_state()
+            self.assertEqual(response['value']['network_error_code'], code)
+            self.assertTrue(response['value']['network_error'])
+
+    async def test_unknown_rpc_error_stays_unknown_and_logs_only_once(self):
+        with patch.object(self.service, 'configure', side_effect=RuntimeError('private diagnostic')):
+            with patch.object(plugin.decky.logger, 'error') as report:
+                for _ in range(10):
+                    response = await self.plugin.save_settings(True, 'Home')
+                    self.assertEqual(response['error_code'], 'unknown')
+                report.assert_called_once()
+
+    async def test_corrupt_settings_returns_known_code(self):
+        self.path.write_text('bad json')
+        with self.assertLogs('test', level='ERROR'):
+            await self.plugin._main()
+        self.assertEqual((await self.plugin.get_state())['error_code'], 'settings_unreadable')
 
 
 class SubprocessTests(unittest.IsolatedAsyncioTestCase):

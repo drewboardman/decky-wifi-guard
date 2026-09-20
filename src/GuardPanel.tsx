@@ -1,3 +1,4 @@
+import { IssueMessage } from "./IssueMessage";
 import {
   ButtonItem,
   PanelSection,
@@ -13,7 +14,6 @@ export function GuardPanel({ guard }: { guard: DownloadGuard }) {
   const [state, setState] = useState(guard.state);
   const [ssid, setSsid] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     setState(guard.state);
     return guard.subscribe(() => setState({ ...guard.state }));
@@ -23,19 +23,20 @@ export function GuardPanel({ guard }: { guard: DownloadGuard }) {
   const current = backend?.networks[0];
   async function update(enabled: boolean, network: string) {
     setBusy(true);
-    setError(null);
     try {
       await guard.configure({ enabled, ssid: network });
       setSsid(null);
     } catch (err) {
-      setError(String(err));
+      guard.fail(err);
     } finally {
       setBusy(false);
     }
   }
-  const problem = error || state.error;
+  const problem = state.issue;
   const label = problem
-    ? "Needs attention"
+    ? problem.tone === "error"
+      ? "Needs attention"
+      : "Checking…"
     : !backend
       ? "Checking…"
       : !backend.enabled
@@ -52,7 +53,13 @@ export function GuardPanel({ guard }: { guard: DownloadGuard }) {
       <PanelSection title="Download protection">
         <PanelSectionRow>
           <Pill
-            color={problem ? "#7b3636" : state.blocked ? "#5a4a20" : "#2f6b3f"}
+            color={
+              problem?.tone === "error"
+                ? "#7b3636"
+                : state.blocked
+                  ? "#5a4a20"
+                  : "#2f6b3f"
+            }
           >
             {label}
           </Pill>
@@ -73,7 +80,12 @@ export function GuardPanel({ guard }: { guard: DownloadGuard }) {
         </PanelSectionRow>
         {problem && (
           <PanelSectionRow>
-            <Notice tone="error">{problem}</Notice>
+            <Notice tone={problem.tone}>
+              <IssueMessage
+                issue={problem}
+                stopped={state.mode === "faulted"}
+              />
+            </Notice>
             <ButtonItem layout="below" onClick={() => void guard.retry()}>
               Retry protection
             </ButtonItem>

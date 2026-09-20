@@ -3,7 +3,11 @@ import asyncio
 import json
 import os
 from pathlib import Path
-from typing import Protocol
+from typing import Callable, Protocol
+
+
+class NetworkReadError(RuntimeError):
+    pass
 
 
 def validate_settings(enabled, ssid):
@@ -113,7 +117,7 @@ class NmcliNetworkReader:
                 chunks.append(chunk)
             await process.wait()
             if process.returncode:
-                raise RuntimeError("NetworkManager could not report the active Wi-Fi network")
+                raise NetworkReadError("NetworkManager could not report the active Wi-Fi network")
             return parse_networks(b"".join(chunks).decode("utf-8", errors="strict"))
 
         try:
@@ -132,7 +136,8 @@ class NmcliNetworkReader:
 
 
 class GuardService:
-    def __init__(self, store: SettingsStore, network: NetworkReader):
+    def __init__(self, store: SettingsStore, network: NetworkReader, report: Callable[[str, Exception], None] = lambda code, error: None):
+        self.report = report
         self.store = store
         self.network = network
         self.data = None
@@ -143,16 +148,26 @@ class GuardService:
 
     async def state(self):
         async with self.lock:
-            networks, error = [], None
+            networks, error, code = [], None, None
             try:
                 networks = await self.network.read()
-            except FileNotFoundError:
-                error = "Wi-Fi detection requires NetworkManager (nmcli) on SteamOS."
-            except asyncio.TimeoutError:
-                error = "Wi-Fi detection timed out. Keeping the existing download state."
             except Exception as exc:
-                error = str(exc)[:400]
-            return {**self.data, "networks": networks, "network_error": error}
+                if isinstance(exc, FileNotFoundError):
+                    code = "network_unavailable"
+                elif isinstance(exc, asyncio.TimeoutError):
+                    code = "network_timeout"
+                elif isinstance(exc, (ValueError, UnicodeError)):
+                    code = "invalid_response"
+                elif isinstance(exc, (NetworkReadError, OSError)):
+                    code = "network_unavailable"
+                else:
+                    code = "unknown"
+                error = str(exc)[:400] or "Network lookup failed"
+                try:
+                    self.report(code, exc)
+                except Exception:
+                    pass
+            return {**self.data, "networks": networks, "network_error": error, "network_error_code": code}
 
     async def configure(self, enabled, ssid):
         settings = validate_settings(enabled, ssid)

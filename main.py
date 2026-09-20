@@ -12,33 +12,44 @@ from wifi_guard import GuardService, JsonSettingsStore, NmcliNetworkReader  # no
 class Plugin:
     _service = None
     _startup_error = "Wi-Fi Guard is still starting. Retry shortly."
+    _startup_code = "backend_unavailable"
+
+    def _report_once(self, code, error):
+        if code in self._logged_errors:
+            return
+        self._logged_errors.add(code)
+        try:
+            decky.logger.error("Wi-Fi Guard: %s", code, exc_info=(type(error), error, error.__traceback__))
+        except Exception:
+            pass
 
     async def _main(self):
         self._service = None
+        self._logged_errors = set()
         try:
             service = GuardService(
                 JsonSettingsStore(Path(decky.DECKY_PLUGIN_SETTINGS_DIR) / "settings.json"),
                 NmcliNetworkReader(),
+                self._report_once,
             )
             await service.initialize()
             self._service = service
             self._startup_error = None
-        except Exception:
-            self._startup_error = "Wi-Fi Guard could not load its settings. Check the plugin log and settings file, then reload Decky."
-            try:
-                decky.logger.exception(self._startup_error)
-            except Exception:
-                pass
+        except Exception as exc:
+            self._startup_error = "Wi-Fi Guard could not load its settings."
+            self._startup_code = "settings_unreadable" if isinstance(exc, (OSError, ValueError, KeyError, TypeError)) else "unknown"
+            self._report_once(self._startup_code, exc)
             # Do not throw out of _main: Decky must not restart-loop the backend.
 
     async def _call(self, operation, *args):
         if self._service is None:
-            return {"ok": False, "error": self._startup_error}
+            return {"ok": False, "error": self._startup_error, "error_code": self._startup_code}
         try:
             return {"ok": True, "value": await operation(*args)}
         except Exception as exc:
-            # Expected invalid input / disk / platform errors do not escape RPC.
-            return {"ok": False, "error": str(exc)[:400] or "Backend operation failed"}
+            code = "invalid_settings" if isinstance(exc, ValueError) else "storage_unavailable" if isinstance(exc, OSError) else "unknown"
+            self._report_once(code, exc)
+            return {"ok": False, "error": str(exc)[:400] or "Backend operation failed", "error_code": code}
 
     async def get_state(self):
         return await self._call(self._service.state if self._service else None)

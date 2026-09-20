@@ -24,11 +24,19 @@ test("React render crash renders a plain fallback and faults the supervisor", ()
       );
     });
     assert.match(String(fault), /render failed/);
-    assert.equal(renderer!.toJSON().props.role, "alert");
+    assert.equal(
+      renderer!.root.findByProps({ role: "alert" }).props.style.color,
+      "#ff8b8b",
+    );
     assert.match(
       JSON.stringify(renderer!.toJSON()),
-      /stopped automatic protection/,
+      /Automatic protection is stopped/,
     );
+    assert.match(
+      JSON.stringify(renderer!.toJSON()),
+      /An unknown error occurred/,
+    );
+    assert.doesNotMatch(JSON.stringify(renderer!.toJSON()), /render failed/);
     act(() => renderer!.unmount());
   } finally {
     console.error = original;

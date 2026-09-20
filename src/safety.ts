@@ -1,17 +1,7 @@
 import type { Runtime } from "./ports";
+import { GuardFault } from "./errors";
 
-export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
-export function describe(error: unknown): string {
-  try {
-    return (error instanceof Error ? error.message : String(error)).slice(
-      0,
-      400,
-    );
-  } catch {
-    return "Unknown plugin error";
-  }
-}
-
+export type Result<T> = { ok: true; value: T } | { ok: false; error: unknown };
 /** Deadline bounds the caller, not the underlying RPC. Track it until settlement
  * so a timeout cannot create overlapping retries or late contradictory writes. */
 export class Effects {
@@ -32,8 +22,7 @@ export class Effects {
     if (this.unsettled)
       return {
         ok: false,
-        error:
-          "A previous operation is still running. Retry after it finishes, or reload Decky.",
+        error: new GuardFault("busy"),
       };
     this.unsettled = true;
     let cancel = () => {};
@@ -49,7 +38,10 @@ export class Effects {
             this.unsettled = false;
             return {
               ok: false as const,
-              error: `${label}: ${describe(error)}`,
+              error: new GuardFault(
+                error instanceof GuardFault ? error.code : "unknown",
+                { operation: label, cause: error },
+              ),
             };
           },
         );
@@ -57,13 +49,16 @@ export class Effects {
         cancel = this.runtime.later(this.timeoutMs, () =>
           resolve({
             ok: false,
-            error: `${label} timed out. Automatic protection stopped.`,
+            error: new GuardFault("timeout", { operation: label }),
           }),
         );
       });
       return await Promise.race([work, deadline]);
     } catch (error) {
-      return { ok: false, error: `${label}: ${describe(error)}` };
+      return {
+        ok: false,
+        error: new GuardFault("unknown", { operation: label, cause: error }),
+      };
     } finally {
       try {
         cancel();

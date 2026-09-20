@@ -1,3 +1,4 @@
+import { GuardFault } from "../errors";
 import type { Dispose, Steam } from "../ports";
 
 interface Registration {
@@ -21,9 +22,7 @@ interface SteamClient {
 
 function dispose(registration: Registration): Dispose {
   if (typeof registration?.unregister !== "function")
-    throw new Error(
-      "Steam returned an invalid event subscription. Reload Decky.",
-    );
+    throw new GuardFault("invalid_response", "Invalid native subscription");
   return () => registration.unregister();
 }
 
@@ -33,9 +32,7 @@ export function steamAdapter(client: SteamClient | undefined): Steam {
     onNetworkChanged(notify, fault) {
       const network = client?.System?.Network;
       if (typeof network?.RegisterForDeviceChanges !== "function")
-        throw new Error(
-          "Steam network events are unavailable. Update Steam and reload Decky.",
-        );
+        throw new GuardFault("steam_unavailable", "Network events unavailable");
       return dispose(
         network.RegisterForDeviceChanges(() => {
           try {
@@ -53,12 +50,18 @@ export function steamAdapter(client: SteamClient | undefined): Steam {
     onPauseChanged(notify, fault) {
       const downloads = client?.Downloads;
       if (typeof downloads?.RegisterForDownloadOverview !== "function")
-        throw new Error("Steam download events are unavailable.");
+        throw new GuardFault(
+          "steam_unavailable",
+          "Download events unavailable",
+        );
       return dispose(
         downloads.RegisterForDownloadOverview((value) => {
           try {
             if (!value || typeof value !== "object")
-              throw new Error("Malformed Steam download event");
+              throw new GuardFault(
+                "invalid_response",
+                "Malformed Steam download event",
+              );
             const overview = value as {
               paused?: unknown;
               remote_client_id?: unknown;
@@ -70,7 +73,10 @@ export function steamAdapter(client: SteamClient | undefined): Steam {
             )
               return;
             if (typeof overview.paused !== "boolean")
-              throw new Error("Malformed Steam pause state");
+              throw new GuardFault(
+                "invalid_response",
+                "Malformed Steam pause state",
+              );
             notify(overview.paused);
           } catch (error) {
             try {
@@ -85,7 +91,10 @@ export function steamAdapter(client: SteamClient | undefined): Steam {
     async setDownloadsEnabled(enabled) {
       const downloads = client?.Downloads;
       if (typeof downloads?.EnableAllDownloads !== "function")
-        throw new Error("Steam download controls are unavailable.");
+        throw new GuardFault(
+          "steam_unavailable",
+          "Download controls unavailable",
+        );
       await downloads.EnableAllDownloads(enabled, "0");
     },
   };

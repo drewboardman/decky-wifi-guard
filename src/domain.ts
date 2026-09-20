@@ -1,3 +1,5 @@
+import { issueCode } from "./errors";
+import type { IssueCode } from "./errors";
 /** Pure policy: no Steam, React, timers, filesystem, or exceptions. */
 export interface Settings {
   enabled: boolean;
@@ -7,9 +9,10 @@ export interface Snapshot extends Settings {
   owned_pause: boolean;
   networks: string[];
   network_error: string | null;
+  network_error_code?: string | null;
 }
 export type Decision =
-  | { kind: "wait"; reason: string }
+  | { kind: "wait"; reason: IssueCode }
   | { kind: "hold" }
   | { kind: "acquire" }
   | { kind: "pause" }
@@ -26,11 +29,10 @@ export function decide(
   paused: boolean | null,
   owned: boolean,
 ): Decision {
-  if (!snapshot) return { kind: "wait", reason: "Waiting for saved settings…" };
+  if (!snapshot) return { kind: "wait", reason: "settings_pending" };
   if (snapshot.enabled && snapshot.ssid && snapshot.network_error)
-    return { kind: "wait", reason: snapshot.network_error };
-  if (paused === null)
-    return { kind: "wait", reason: "Waiting for Steam download status…" };
+    return { kind: "wait", reason: issueCode(snapshot.network_error_code) };
+  if (paused === null) return { kind: "wait", reason: "steam_pending" };
   if (protects(snapshot))
     return paused ? { kind: "hold" } : { kind: owned ? "pause" : "acquire" };
   return owned ? { kind: paused ? "resume" : "release" } : { kind: "hold" };

@@ -165,9 +165,10 @@ test("network lookup error never resumes an owned pause; explicit disable releas
   await settle();
   h.snapshot.networks = [];
   h.snapshot.network_error = "nmcli failed";
+  h.snapshot.network_error_code = "network_unavailable";
   await h.event();
   assert.deepEqual(h.calls, [false]);
-  assert.match(h.guard.state.error!, /nmcli/);
+  assert.equal(h.guard.state.issue?.code, "network_unavailable");
   await h.guard.configure({ enabled: false, ssid: "Phone" });
   assert.deepEqual(h.calls, [false, true]);
   await h.guard.stop();
@@ -347,7 +348,7 @@ test("rejected native command is contained without an unhandled rejection or aut
   h.pause(false);
   await h.guard.refresh(false);
   assert.equal(h.guard.state.mode, "faulted");
-  assert.match(h.guard.state.error!, /Steam failed/);
+  assert.equal(h.guard.state.issue?.code, "unknown");
   await h.guard.stop();
 });
 test("restore failure preserves journal; stop is idempotent", async () => {
@@ -388,7 +389,7 @@ test("unknown initial download state cannot acquire pause ownership", async () =
   h.guard.start();
   await settle();
   assert.deepEqual(h.calls, []);
-  assert.match(h.guard.state.error!, /Waiting/);
+  assert.equal(h.guard.state.issue?.code, "steam_pending");
   await h.guard.stop();
 });
 
@@ -419,7 +420,7 @@ test("silent native command failure trips once instead of issuing commands repea
   h.time.advance(3001);
   await settle();
   assert.equal(h.guard.state.mode, "faulted");
-  assert.match(h.guard.state.error!, /confirm/);
+  assert.equal(h.guard.state.issue?.code, "command_unconfirmed");
   await h.guard.stop();
 });
 test("failed unsubscribe prevents retries from accumulating listeners", async () => {
@@ -452,6 +453,6 @@ test("a feedback loop yields to the circuit breaker within one drain", async () 
   await settle();
   assert.equal(h.guard.state.mode, "faulted");
   assert.ok(reads <= 16);
-  assert.match(h.guard.state.error!, /feedback loop/);
+  assert.equal(h.guard.state.issue?.code, "event_overload");
   await h.guard.stop();
 });
