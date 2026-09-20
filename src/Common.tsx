@@ -19,11 +19,13 @@ export function Notice({
   title?: ReactNode;
   children?: ReactNode;
 }) {
-  // Focusable, not a plain div: the Steam UI only scrolls to follow the focused
-  // element, so a notice sitting after the last control on a page is otherwise
-  // unreachable with the D-pad and the page appears to stop scrolling there.
+  // Steam's Panel-backed Focusable is a navigation container by default.
+  // Static text needs an explicit focus target so D-pad navigation can reach
+  // it and scroll it into view. @decky/ui omits this native prop from its types.
+  const navigation = { focusable: true };
   return (
     <Focusable
+      {...navigation}
       focusWithinClassName="gpfocuswithin"
       style={{
         borderLeft: `3px solid ${TONE_COLORS[tone]}`,
